@@ -8,6 +8,14 @@ html {
   position: fixed;
 }
 
+div {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  flex-direction: column;
+  height: 100%;
+}
+
 canvas {
   -ms-interpolation-mode: nearest-neighbor;
   image-rendering: -webkit-optimize-contrast;
@@ -15,12 +23,16 @@ canvas {
   image-rendering: -moz-crisp-edges;
   image-rendering: -o-crisp-edges;
   image-rendering: pixelated;
-  position: absolute;
-  margin: auto;
-  top: 0;
-  bottom: 0;
-  right: 0;
-  left: 0;
-  width: 65vmin;
-  height: 65vmin;
+  display: block;
+  background: #06011f;
+  width: 480px;
+}
+
+canvas:nth-of-type(1) {
+  height: 128px;
+}
+
+canvas:nth-of-type(2) {
+  height: 640px;
+  cursor: none;
 }

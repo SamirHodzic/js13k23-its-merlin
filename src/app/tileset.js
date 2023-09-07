@@ -1,12 +1,6 @@
 export default class Tileset {
-  constructor(i, w, h, ctx) {
+  constructor(i) {
     this.i = new Image();
     this.i.src = i;
-    this.w = w;
-    this.h = h;
-
-    this.i.onload = function () {
-      ctx.imageSmoothingEnabled = false;
-    }
   }
 }
