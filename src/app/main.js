@@ -16,12 +16,16 @@ import {
   POWERUPS,
   POWERUP_LIST,
   MAP,
-  LOGO
+  LOGO,
+  MUSIC
 } from './constants';
 import Tileset from './tileset';
 import Particle from './particle';
 import Player from './player';
+import './zzfx';
+import './zzfxm.min.js';
 
+var curtainEl = document.getElementById('w');
 var canvas = document.getElementById('2');
 canvas.width = 480;
 canvas.height = 640;
@@ -36,6 +40,7 @@ var hctx = headerCanvas.getContext('2d');
 hctx.imageSmoothingEnabled = false;
 hctx.textBaseline = 'alphabetic';
 
+var highScore = localStorage.getItem('ms') || 1;
 const player = new Player(canvas.width / 2, canvas.height / 2);
 const crosshairSprite = new Tileset(CROSSHAIR).i;
 const skeletSprite = new Tileset(SKELET).i;
@@ -65,51 +70,68 @@ const baseGrid = MAP[0];
 const detailsGrid = MAP[1];
 const collisionGrid = MAP[2];
 
+let enemyInterval;
+let isMouseDown;
+let mouseX = canvas.width / 2;
+let mouseY = canvas.height / 2;
+let waveClear = false;
+let powerupMenu = false;
+let enableClick = false;
+let isGameOver = true;
+let cycle = false;
+let curtain = false;
+let music = null;
+let buffer = zzfxM(...MUSIC);
+let soundEnabled = true;
+let soundActive = false;
+let wave = {
+  n: 0,
+  e: []
+};
+
+let boss = null;
+let powers = [];
+const bullets = [];
+const enemies = [];
+const enemyBullets = [];
+const particles = [];
+
+let currentAnimationFrame = 0;
+let animationFrameCount = 4;
+let animationFrameDelay = 6;
+
 function drawMap() {
   for (var i = 0; i < baseGrid.length; i++) {
-    const assetX = (baseGrid[i] - 1) % 48;
-    const assetY = Math.floor(baseGrid[i] / 48);
+    const assetX = (baseGrid[i] - 1) % 47;
     const posX = (i % 15) * 32;
     const posY = Math.floor(i / 15) * 32;
 
-    ctx.drawImage(tiles, assetX * 16, assetY * 16, 16, 16, posX, posY, 32, 32);
+    ctx.drawImage(tiles, assetX * 16, 0, 16, 16, posX, posY, 32, 32);
   }
 
   for (var i = 0; i < detailsGrid.length; i++) {
-    const assetX = (detailsGrid[i] - 1) % 48;
-    const assetY = Math.floor(detailsGrid[i] / 48);
+    const assetX = (detailsGrid[i] - 1) % 47;
     const posX = (i % 15) * 32;
     const posY = Math.floor(i / 15) * 32;
 
-    ctx.drawImage(tiles, assetX * 16, assetY * 16, 16, 16, posX, posY, 32, 32);
+    ctx.drawImage(tiles, assetX * 16, 0, 16, 16, posX, posY, 32, 32);
   }
 }
 
 function drawHeader() {
   for (var i = 0; i < HEADER.length; i++) {
-    const assetX = (HEADER[i] - 1) % 48;
-    const assetY = Math.floor(HEADER[i] / 48);
+    const assetX = (HEADER[i] - 1) % 47;
     const posX = (i % 15) * 32;
     const posY = Math.floor(i / 15) * 32;
 
-    hctx.drawImage(
-      tiles,
-      assetX * 16,
-      assetY * 16,
-      16,
-      16,
-      posX - 1,
-      posY - 1,
-      32,
-      32
-    );
+    hctx.drawImage(tiles, assetX * 16, 0, 16, 16, posX - 1, posY - 1, 32, 32);
   }
 
   if (isGameOver) {
     hctx.fillStyle = 'white';
     hctx.font = '18px Arial';
-    hctx.fillText('HIGHEST WAVE', 170, 45);
-    const s = `100`;
+    hctx.fillText('BEST WAVE', 185, 45);
+    const s = `${highScore}`;
     hctx.fillText(s, 232 - (s.length - 1) * 5, 70);
     return;
   }
@@ -136,7 +158,7 @@ function drawHeader() {
   hctx.fillStyle = '#4ba747';
   hctx.fillRect(51, 55, hW, 20);
   hctx.fillStyle = '#3d734f';
-  hctx.fillRect(54, 69, hW > 0 ? hW - 5 : 0, 4);
+  hctx.fillRect(54, 69, hW > 0 && hW >= 5 ? hW - 5 : 0, 4);
 
   hctx.fillStyle = 'white';
   hctx.font = '18px Arial';
@@ -158,66 +180,54 @@ function drawCursor() {
     32
   );
 
-  if (frameCount % animationFrameDelay === 0) {
+  if (frames % animationFrameDelay === 0) {
     currentAnimationFrame = (currentAnimationFrame + 1) % animationFrameCount;
   }
 }
 
 function drawPowerupMenu() {
   ctx.fillStyle = '#06011f';
-  ctx.globalAlpha = 0.5;
+  ctx.globalAlpha = 0.3;
   ctx.fillRect(0, 0, canvas.width, canvas.height);
 
   [0, 1, 2].forEach((i) => {
     ctx.strokeStyle = '#fff';
     ctx.strokeRect(95, 146 + i * 100, 285, 56);
-    ctx.fillStyle = '#06011f';
+    ctx.fillStyle = !checkMaxed(i) ? '#991d0f' : '#06011f';
     ctx.fillRect(95, 146 + i * 100, 285, 56);
   });
 
   ctx.globalAlpha = 1.0;
-  ctx.fillStyle = '#fff';
-  ctx.font = '15px Arial';
 
-  ctx.fillText(powers[0].d, 160, 180);
-  ctx.fillText(powers[1].d, 160, 280);
-  ctx.fillText(powers[2].d, 160, 380);
+  [0, 1, 2].forEach((p) => {
+    ctx.font = '15px Arial';
+    ctx.fillStyle = '#fff';
+    ctx.fillText(powers[p].d, 160, 180 + p * 100);
 
-  ctx.drawImage(powerupsSprite, powers[0].t * 16, 0, 16, 16, 100, 150, 48, 48);
-  ctx.drawImage(powerupsSprite, powers[1].t * 16, 0, 16, 16, 100, 250, 48, 48);
-  ctx.drawImage(powerupsSprite, powers[2].t * 16, 0, 16, 16, 100, 350, 48, 48);
+    if (!checkMaxed(p)) {
+      ctx.font = '13px Arial';
+      ctx.fillStyle = '#f95946';
+      ctx.fillText('MAX LVL', 323, 198 + p * 100);
+    }
+
+    ctx.drawImage(
+      powerupsSprite,
+      powers[p].t * 16,
+      0,
+      16,
+      16,
+      100,
+      150 + p * 100,
+      48,
+      48
+    );
+  });
 
   if (wave.n > 0 && !((wave.n + 1) % 12)) {
     ctx.fillText('*From next wave enemies will have', 118, 450);
-    ctx.fillText(' increased HP and damage by 20%', 118, 470);
+    ctx.fillText(' increased HP and damage by 25%', 118, 470);
   }
 }
-
-let enemyInterval;
-let isMouseDown;
-let mouseX = canvas.width / 2;
-let mouseY = canvas.height / 2;
-let waveClear = false;
-let powerupMenu = false;
-let enableClick = false;
-let isGameOver = true;
-let cycle = false;
-let wave = {
-  n: 0,
-  e: []
-};
-
-let boss = null;
-const bullets = [];
-const enemies = [];
-const enemyBullets = [];
-const particles = [];
-let powers = [];
-
-let currentAnimationFrame = 0;
-let animationFrameCount = 4;
-let animationFrameDelay = 18;
-let frameCount = 0;
 
 function drawPlayer() {
   const animationDirection = mouseX - player.x >= 0 ? 1 : 0;
@@ -226,7 +236,6 @@ function drawPlayer() {
   const weaponX = player.x + weaponOffsetX;
   const weaponY = player.y + weaponOffsetY;
 
-  // Draw the weapon
   ctx.save();
   ctx.translate(weaponX, weaponY);
   ctx.drawImage(
@@ -247,8 +256,8 @@ function drawPlayer() {
       player.img,
       currentAnimationFrame * 16,
       0,
-      16, // Frame width
-      23, // Frame height
+      16,
+      23,
       player.x,
       player.y,
       32,
@@ -291,8 +300,8 @@ function drawBoss() {
     enemySprites[boss.t],
     currentAnimationFrame * 32,
     0,
-    32, // Frame width
-    32, // Frame height
+    32,
+    32,
     boss.x,
     boss.y,
     96,
@@ -310,8 +319,8 @@ function drawEnemy(enemy) {
       enemySprites[enemy.t],
       currentAnimationFrame * 16,
       0,
-      16, // Frame width
-      23, // Frame height
+      16,
+      23,
       enemy.x,
       enemy.y,
       32,
@@ -351,8 +360,8 @@ function updateEnemies() {
       enemyBullets.push({
         x: enemy.x,
         y: enemy.y + 20,
-        dx: Math.cos(enemy.angleToPlayer) * 2,
-        dy: Math.sin(enemy.angleToPlayer) * 2,
+        dx: Math.cos(enemy.angleToPlayer) * 6,
+        dy: Math.sin(enemy.angleToPlayer) * 6,
         dm: enemy.sdm,
         c1: enemy.c1,
         c2: enemy.c2
@@ -391,8 +400,8 @@ function updateEnemyBullets() {
             enemyBullets.push({
               x: bulletX - 30,
               y: bulletY - 30,
-              dx: 2 * Math.cos(angle),
-              dy: 2 * Math.sin(angle),
+              dx: 6 * Math.cos(angle),
+              dy: 6 * Math.sin(angle),
               dm: boss.sdm / 3,
               c1: '#4ba747',
               c2: '#97da3f'
@@ -448,7 +457,7 @@ function aabb(a, b) {
 function isColliding(x, y) {
   for (var j = 0; j < collisionGrid.length; j++) {
     if (
-      collisionGrid[j] === 48 &&
+      collisionGrid[j] === 1 &&
       aabb(
         { x, y, w: 32, h: 46 },
         { x: (j % 15) * 32, y: Math.floor(j / 15) * 32, w: 32, h: 32 }
@@ -462,28 +471,63 @@ function isColliding(x, y) {
 }
 
 function drawMainMenu() {
-  ctx.globalAlpha = 0.5;
+  ctx.globalAlpha = 0.3;
   ctx.fillStyle = '#06011f';
   ctx.fillRect(0, 0, canvas.width, canvas.height);
-  ctx.strokeStyle = '#fff';
+  ctx.strokeStyle = ['#0093c4', '#5663bd', '#ab5da2', '#ffda41'][
+    currentAnimationFrame
+  ];
   ctx.strokeRect(95, 346, 285, 56);
   ctx.fillRect(95, 346, 285, 56);
   ctx.globalAlpha = 1.0;
   ctx.fillStyle = '#fff';
-  ctx.font = '18px Arial';
-  ctx.fillText('PLAY', 218, 380);
-  ctx.drawImage(logoSprite, 0, 0, 53, 29, 80, 100, 312, 174);
+  ctx.font = '24px Arial';
+  ctx.fillText('PLAY', 212, 383);
+  const displacementY = Math.sin(frames / 60) * 16;
+  ctx.drawImage(logoSprite, 0, 0, 53, 29, 80, 100 + displacementY, 312, 174);
+}
+
+function toggleCurtain(cb, v = 0) {
+  if (!curtain) {
+    curtain = true;
+
+    setTimeout(() => {
+      curtainEl.setAttribute('style', 'box-shadow: inset 0 0 0 290px #0f0f11');
+
+      setTimeout(() => {
+        curtainEl.removeAttribute('style');
+        curtain = false;
+        cb();
+      }, 500);
+    }, v);
+  }
 }
 
 function startRun() {
   if (mouseX >= 95 && mouseX <= 380 && mouseY >= 346 && mouseY <= 406) {
-    isGameOver = false;
-    restartGame();
+    toggleCurtain(() => {
+      isGameOver = false;
+      restartGame();
+    });
   }
 }
 
+function startMusic() {
+  music = zzfxP(...buffer);
+  music && (music.loop = 1);
+}
+
+function toggleMusic() {
+  if (soundEnabled) {
+    music.stop();
+  } else {
+    startMusic();
+  }
+
+  soundEnabled = !soundEnabled;
+}
+
 function update() {
-  frameCount++;
   ctx.clearRect(0, 0, canvas.width, canvas.height);
   hctx.clearRect(0, 0, headerCanvas.width, headerCanvas.height);
   drawMap();
@@ -492,8 +536,13 @@ function update() {
     drawHeader();
     drawMainMenu();
     drawCursor();
-    if (isMouseDown) {
+    if (isMouseDown && !cycle) {
       startRun();
+
+      if (soundEnabled && !soundActive) {
+        soundActive = true;
+        startMusic();
+      }
     }
     return;
   }
@@ -536,7 +585,6 @@ function update() {
     }
   }
 
-  // Update bullet positions and draw
   for (let i = 0; i < bullets.length; i++) {
     bullets[i].x += bullets[i].dx;
     bullets[i].y += bullets[i].dy;
@@ -552,7 +600,6 @@ function update() {
       bullets.splice(i, 1);
       i--;
     } else {
-      // Check for bullet-enemy collision
       for (let j = 0; j < enemies.length; j++) {
         const enemy = enemies[j];
 
@@ -578,7 +625,6 @@ function update() {
             const knockbackX = (dx / distance) * knockbackDistance;
             const knockbackY = (dy / distance) * knockbackDistance;
 
-            // Adjust the enemy's position within the canvas boundaries
             const newX = enemy.x - knockbackX;
             const newY = enemy.y - knockbackY;
             enemy.x = Math.max(0, Math.min(canvas.width, newX));
@@ -617,11 +663,9 @@ function update() {
     const dy = player.y - boss.y;
     const angleToPlayer = Math.atan2(dy, dx);
 
-    // Calculate the normalized step towards the player
     const stepX = Math.cos(angleToPlayer) * boss.s;
     const stepY = Math.sin(angleToPlayer) * boss.s;
 
-    // Move the enemy toward the player
     boss.x += stepX;
     boss.y += stepY;
 
@@ -633,7 +677,7 @@ function update() {
     ) {
       player.hp -= boss.dm;
       const distance = Math.sqrt(dx * dx + dy * dy);
-      const kickBackDistance = 1;
+      const kickBackDistance = 2.5;
       const kickBackX = (dx / distance) * kickBackDistance;
       const kickBackY = (dy / distance) * kickBackDistance;
       const newX = player.x + kickBackX;
@@ -646,22 +690,17 @@ function update() {
     }
   }
 
-  // Update enemy positions and draw
   for (let i = 0; i < enemies.length; i++) {
     const enemy = enemies[i];
     const dx = player.x - enemy.x;
     const dy = player.y - enemy.y;
     const angleToPlayer = Math.atan2(dy, dx);
 
-    // Calculate the normalized step towards the player
     const stepX = Math.cos(angleToPlayer) * enemy.s;
     const stepY = Math.sin(angleToPlayer) * enemy.s;
 
-    // Move the enemy toward the player
     enemy.x += stepX;
     enemy.y += stepY;
-
-    // Check for enemy-player collision
 
     if (
       aabb(
@@ -671,7 +710,7 @@ function update() {
     ) {
       player.hp -= enemy.dm;
       const distance = Math.sqrt(dx * dx + dy * dy);
-      const kickBackDistance = 1;
+      const kickBackDistance = 2.5;
       const kickBackX = (dx / distance) * kickBackDistance;
       const kickBackY = (dy / distance) * kickBackDistance;
       const newX = player.x + kickBackX;
@@ -683,7 +722,6 @@ function update() {
       }
     }
 
-    // Prevent enemies from overlapping
     for (let j = 0; j < enemies.length; j++) {
       if (i !== j) {
         const otherEnemy = enemies[j];
@@ -729,7 +767,7 @@ function update() {
       ctx.fillStyle =
         Math.random() < 0.5
           ? `rgba(255, 0, 0, ${particles[i].alpha})`
-          : `rgba(255, 255, 255, ${particles[i].alpha})`; // Yellow color with alpha
+          : `rgba(255, 255, 255, ${particles[i].alpha})`;
       ctx.fill();
       ctx.closePath();
     }
@@ -756,8 +794,15 @@ function update() {
     player.a = Math.atan2(dy, dx);
   }
 
-  if (player.hp <= 0) {
-    isGameOver = true;
+  if (player.hp <= 0 && !curtain) {
+    toggleCurtain(() => {
+      isGameOver = true;
+      const nr = wave.n + 1;
+      if (nr > highScore) {
+        highScore = `${nr}`;
+        localStorage.setItem('ms', nr);
+      }
+    }, 1000);
   }
 }
 
@@ -819,6 +864,10 @@ const keys = {};
 
 function onKeyDown(event) {
   keys[event.key] = true;
+
+  if (event.key === 'm') {
+    toggleMusic();
+  }
 }
 
 function onKeyUp(event) {
@@ -856,8 +905,8 @@ function mouseClick() {
       bullets.push({
         x: weaponEndX,
         y: weaponEndY,
-        dx: Math.cos(b) * 4,
-        dy: Math.sin(b) * 4,
+        dx: Math.cos(b) * 10,
+        dy: Math.sin(b) * 10,
         c1: '#f3a7cd',
         c2: '#e71284'
       });
@@ -891,25 +940,19 @@ function spawnEnemy() {
   let spawnX, spawnY;
 
   if (side === 0) {
-    // Right side
     spawnX = canvas.width + 16;
     spawnY = canvas.height / 2;
   } else if (side === 1) {
-    // Bottom side
     spawnX = canvas.width / 2;
     spawnY = canvas.height + 16;
   } else {
-    // Left side
     spawnX = -16;
     spawnY = canvas.height / 2;
   }
 
-  // Calculate the normalized step towards the player
   const angleToPlayer = Math.atan2(player.y - spawnY, player.x - spawnX);
   const stepX = Math.cos(angleToPlayer);
   const stepY = Math.sin(angleToPlayer);
-
-  // Add a buffer to prevent spawning too close to the player
   const dx = spawnX - player.x;
   const dy = spawnY - player.y;
   const distance = Math.sqrt(dx * dx + dy * dy);
@@ -921,15 +964,15 @@ function spawnEnemy() {
     enemies.push({
       x: spawnX,
       y: spawnY,
-      hp: player.inc ? e.hp + ((player.inc * 20) / 100) * e.hp : e.hp,
-      mhp: player.inc ? e.hp + ((player.inc * 20) / 100) * e.hp : e.hp,
+      hp: player.inc ? e.hp + ((player.inc * 25) / 100) * e.hp : e.hp,
+      mhp: player.inc ? e.hp + ((player.inc * 25) / 100) * e.hp : e.hp,
       shooter: !!e.q,
       stepX,
       stepY,
       angleToPlayer,
       s: e.s,
-      dm: player.inc ? e.dm + ((player.inc * 20) / 100) * e.dm : e.dm,
-      sdm: player.inc ? e.sdm + ((player.inc * 20) / 100) * e.sdm : e.sdm,
+      dm: player.inc ? e.dm + ((player.inc * 25) / 100) * e.dm : e.dm,
+      sdm: player.inc ? e.sdm + ((player.inc * 25) / 100) * e.sdm : e.sdm,
       t,
       c1: e.c1,
       c2: e.c2
@@ -938,9 +981,12 @@ function spawnEnemy() {
 }
 
 function startEnemyInterval() {
-  enemyInterval = setInterval(() => {
-    spawnEnemy();
-  }, 1650);
+  enemyInterval = setInterval(
+    () => {
+      spawnEnemy();
+    },
+    wave.n ? 1700 : 2200
+  );
 }
 
 function restartGame() {
@@ -969,10 +1015,10 @@ function updateBoss() {
     switch (boss.t) {
       case 'b1':
         if (boss.s > 0.5) {
-          boss.s -= 0.55;
+          boss.s -= 1.4;
         }
         if (Math.random() > 0.65) {
-          boss.s += 0.55;
+          boss.s += 1.4;
         } else {
           const initialRadius = 0;
           const radiusIncrement = 30;
@@ -987,14 +1033,13 @@ function updateBoss() {
               const bullet = {
                 x: bulletX + 40,
                 y: bulletY + 40,
-                dx: 2 * Math.cos(angle),
-                dy: 2 * Math.sin(angle),
+                dx: 6 * Math.cos(angle),
+                dy: 6 * Math.sin(angle),
                 dm: boss.sdm,
                 c1: '#504fa3',
                 c2: '#807fd1'
               };
 
-              // Add the bullet to an array
               enemyBullets.push(bullet);
             }
             currentRadius += radiusIncrement;
@@ -1006,16 +1051,13 @@ function updateBoss() {
           for (var i = 0; i < 3; i++) {
             let spawnX, spawnY;
             if (Math.floor(Math.random() * 2) === 0) {
-              // Right side
               spawnX = canvas.width + 16;
               spawnY = canvas.height / 2;
             } else {
-              // Left side
               spawnX = -16;
               spawnY = canvas.height / 2;
             }
 
-            // Calculate the normalized step towards the player
             const angleToPlayer = Math.atan2(
               player.y - spawnY,
               player.x - spawnX
@@ -1027,15 +1069,17 @@ function updateBoss() {
             enemies.push({
               x: spawnX,
               y: spawnY,
-              hp: e.hp,
-              mhp: e.hp,
+              hp: player.inc ? e.hp + ((player.inc * 25) / 100) * e.hp : e.hp,
+              mhp: player.inc ? e.hp + ((player.inc * 25) / 100) * e.hp : e.hp,
               shooter: !!e.q,
               stepX,
               stepY,
               angleToPlayer,
               s: e.s,
-              dm: e.dm,
-              sdm: e.sdm,
+              dm: player.inc ? e.dm + ((player.inc * 25) / 100) * e.dm : e.dm,
+              sdm: player.inc
+                ? e.sdm + ((player.inc * 25) / 100) * e.sdm
+                : e.sdm,
               t: 's'
             });
           }
@@ -1044,8 +1088,8 @@ function updateBoss() {
             enemyBullets.push({
               x: boss.x + 48,
               y: boss.y + 48,
-              dx: Math.cos(b * 10) * 2,
-              dy: Math.sin(b * 10) * 2,
+              dx: Math.cos(b * 10) * 6,
+              dy: Math.sin(b * 10) * 6,
               dm: boss.sdm,
               c1: '#e64539',
               c2: '#ff8933'
@@ -1055,17 +1099,17 @@ function updateBoss() {
         break;
       case 'b3':
         if (boss.s > 0.5) {
-          boss.s -= 0.7;
+          boss.s -= 1.4;
         }
         if (Math.random() > 0.75) {
-          boss.s += 0.7;
+          boss.s += 1.4;
         } else {
           [-1, 1].forEach((a) => {
             enemyBullets.push({
               x: boss.x + 48,
               y: boss.y + 48,
-              dx: Math.cos(boss.angleToPlayer - (Math.PI / 6) * a) * 2,
-              dy: Math.sin(boss.angleToPlayer - (Math.PI / 6) * a) * 2,
+              dx: Math.cos(boss.angleToPlayer - (Math.PI / 6) * a) * 5,
+              dy: Math.sin(boss.angleToPlayer - (Math.PI / 6) * a) * 5,
               dm: boss.sdm,
               c1: '#4ba747',
               c2: '#97da3f',
@@ -1092,14 +1136,14 @@ function spawnBoss(index) {
   boss = {
     x: sX,
     y: sY,
-    hp: player.inc ? e.hp + ((player.inc * 20) / 100) * e.hp : e.hp,
-    mhp: player.inc ? e.hp + ((player.inc * 20) / 100) * e.hp : e.hp,
+    hp: player.inc ? e.hp + ((player.inc * 25) / 100) * e.hp : e.hp,
+    mhp: player.inc ? e.hp + ((player.inc * 25) / 100) * e.hp : e.hp,
     stepX,
     stepY,
     angleToPlayer,
     s: e.s,
-    dm: player.inc ? e.dm + ((player.inc * 20) / 100) * e.dm : e.dm,
-    sdm: player.inc ? e.sdm + ((player.inc * 20) / 100) * e.sdm : e.sdm,
+    dm: player.inc ? e.dm + ((player.inc * 25) / 100) * e.dm : e.dm,
+    sdm: player.inc ? e.sdm + ((player.inc * 25) / 100) * e.sdm : e.sdm,
     t: index,
     l: new Date()
   };
@@ -1125,19 +1169,17 @@ function startWave() {
 }
 
 var t = 0;
-var amp = 15;
-var step = 0.03;
 
 function shake() {
   var a = (Math.random() * 2 - 1) * t;
-  var x = (Math.random() * amp * 2 - amp) * t;
-  var y = (Math.random() * amp - amp * 0.5) * t;
+  var x = (Math.random() * 15 * 2 - 15) * t;
+  var y = (Math.random() * 15 - 15 * 0.5) * t;
   var s = Math.max(1, 1.05 * t);
   var tr =
     'rotate(' + a + 'deg) translate(' + x + 'px,' + y + 'px) scale(' + s + ')';
 
   canvas.style.transform = canvas.style.webkitTransform = tr;
-  t -= step;
+  t -= 0.03;
 
   if (t > 0) {
     requestAnimationFrame(shake);
@@ -1147,61 +1189,20 @@ function shake() {
   }
 }
 
-function timestamp() {
-  return window.performance && window.performance.now
-    ? window.performance.now()
-    : new Date().getTime();
-}
-
-var stats = new Stats();
-stats.showPanel( 0 ); // 0: fps, 1: ms, 2: mb, 3+: custom
-document.body.appendChild( stats.dom );
-
-// var dt = 0,
-//   now,
-//   last = timestamp(),
-//   step = 1 / 300;
-
-// function frame() {
-//   stats.begin();
-//   now = timestamp();
-//   dt = dt + Math.min(1, (now - last) / 1000);
-//   while (dt > step) {
-//     dt = dt - step;
-//     update();
-//   }
-//   last = now;
-//   stats.end();
-//   requestAnimationFrame(frame, canvas);
-// }
-
-// frame();
-
-let msPrev = window.performance.now()
-const fps = 60
-const msPerFrame = 1000 / fps
-let frames = 0
+let msPrev = window.performance.now();
+const fps = 60;
+const msPerFrame = 1000 / fps;
+let frames = 0;
 
 function animate() {
-  stats.begin();
-  
-  requestAnimationFrame(animate)
-
-  const msNow = window.performance.now()
-  const msPassed = msNow - msPrev
-
-  if (msPassed < msPerFrame) return
-
-  const excessTime = msPassed % msPerFrame
-  msPrev = msNow - excessTime
-
-  frames++
-  update();
-  stats.end();
+  requestAnimationFrame(animate);
+  const msNow = window.performance.now();
+  const msPassed = msNow - msPrev;
+  if (msPassed < msPerFrame) return;
+  const excessTime = msPassed % msPerFrame;
+  msPrev = msNow - excessTime;
+  frames++;
+  if (!curtain) update();
 }
 
-setInterval(() => {
-  console.log(frames)
-}, 1000)
-
-animate()
+animate();

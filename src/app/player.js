@@ -8,7 +8,7 @@ export default class Player {
     this.wp.src = BOOK;
     this.x = x;
     this.y = y;
-    this.s = 0.9;
+    this.s = 2;
     this.hp = 100;
     this.mhp = 100;
     this.a = 0;
@@ -24,7 +24,7 @@ export default class Player {
   res(x, y) {
     this.x = x;
     this.y = y;
-    this.s = 0.9;
+    this.s = 2;
     this.hp = 100;
     this.mhp = 100;
     this.dm = 10;

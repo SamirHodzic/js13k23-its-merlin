@@ -4,9 +4,8 @@
   "scripts": {
     "start": "webpack-dev-server --mode development",
     "build": "webpack --mode production",
-    "roller": "npx roadroller -Zab14 -Zlr930 -Zmd19 -Zpr14 -S0,1,3,7,11,25,42,176,196,225,321,390 ./dist/main.js -o ./dist/main.rolled.js",
-    "postbuild": "rm -f -- dist/build.zip && node archiver.js && ./ect dist/build.zip -zip -9 -strip",
-    "inject-source": "gsed -e '/JS_SOURCE/{r dist/main.rolled.js' -e 'd}' -e '/CSS_SOURCE/{r dist/main.css' -e 'd}' tmp/template.html > dist/index.html"
+    "roller": "npx roadroller -Zab14 -Zlr930 -Zmd19 -Zpr14 -S0,1,2,3,7,13,25,42,53,92,225,418 ./dist/main.js -o ./dist/main.rolled.js",
+    "postbuild": "rm -f -- dist/build.zip && node archiver.js && ./ect dist/build.zip -zip -9 -strip"
   },
   "devDependencies": {
     "archiver": "^2.1.1",

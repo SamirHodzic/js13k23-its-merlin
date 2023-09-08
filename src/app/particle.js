@@ -11,7 +11,7 @@ export default class Particle {
   update() {
     this.x += this.vx;
     this.y += this.vy;
-    this.alpha -= 0.02;
+    this.alpha -= 0.045;
   }
 
   isExpired() {
